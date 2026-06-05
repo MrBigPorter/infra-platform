@@ -85,8 +85,8 @@ services:
     restart: unless-stopped
     working_dir: /app
     volumes:
-      - ./auth-service:/app:ro
-    command: node server.js
+      - ./auth-service:/app
+    command: sh -c "npm install --production && node server.js"
     environment:
       GRAFANA_AUTH_SECRET: ${GRAFANA_AUTH_SECRET}
     ports:
