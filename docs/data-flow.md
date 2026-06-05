@@ -40,7 +40,7 @@ sequenceDiagram
     Loki->>Loki: Update TSDB index (container=hyperpush-app-1, time=T)
     
     Note over Grafana,User: 5. QUERY LAYER (Grafana → Browser)
-    User->>Grafana: Open monitor.joyminins.com/explore
+    User->>Grafana: Open monitor.joyminis.com/explore
     Grafana->>Loki: LogQL: {container="hyperpush-app-1"}
     Loki->>Loki: Find matching chunks via TSDB index
     Loki->>Loki: Decompress chunks, filter results
@@ -189,7 +189,7 @@ datasources:
 Grafana connects to Loki **by container name** (`loki:3100`) within the shared Docker bridge network. No hardcoded IP addresses.
 
 **The query flow:**
-1. User opens `https://monitor.joyminins.com/explore`
+1. User opens `https://monitor.joyminis.com/explore`
 2. Grafana sends a LogQL query to `http://loki:3100`
 3. Loki looks up the TSDB index to find matching chunks
 4. Loki decompresses and returns matching log lines

@@ -217,7 +217,7 @@ docker compose -f compose.monitoring.yml exec promtail \
 # Should return JSON with container, compose_project, level, etc.
 ```
 
-### Problem: `monitor.joyminins.com` returns 502/504
+### Problem: `monitor.joyminis.com` returns 502/504
 
 **Check Nginx:**
 ```bash

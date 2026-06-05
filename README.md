@@ -5,7 +5,7 @@
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![HyperPush](https://img.shields.io/badge/HyperPush-🟢_live-2ECC71)](https://github.com/MrBigPorter/hyperpush)
 
-> **A multi-project Docker log aggregation stack.** Collects, stores, and visualizes container logs from **all projects on a single VPS** — HyperPush, JoyMini, CodePush, and more — through a unified Grafana dashboard at `monitor.joyminins.com`.
+> **A multi-project Docker log aggregation stack.** Collects, stores, and visualizes container logs from **all projects on a single VPS** — HyperPush, JoyMini, CodePush, and more — through a unified Grafana dashboard at `monitor.joyminis.com`.
 
 ---
 
@@ -26,7 +26,7 @@ flowchart LR
     subgraph "Access Layer"
         JoyNginx["JoyMini Nginx<br/>Reverse Proxy"]
         CF["Cloudflare<br/>TLS + Proxy"]
-        User["Engineer<br/>monitor.joyminins.com"]
+        User["Engineer<br/>monitor.joyminis.com"]
     end
 
     App -->|stdout| Docker["Docker Engine<br/>Auto-captures logs"]
@@ -49,9 +49,9 @@ flowchart LR
 
 | Project | Status | Domain |
 |---------|--------|--------|
-| **infra-platform** (this) | ✅ Deployed | [monitor.joyminins.com](https://monitor.joyminins.com) |
+| **infra-platform** (this) | ✅ Deployed | [monitor.joyminis.com](https://monitor.joyminis.com) |
 | **HyperPush** | 🟢 Live | [hyperpush.org](https://hyperpush.org) / [cp.hyperpush.org](https://cp.hyperpush.org) |
-| **JoyMini** | 🟢 Live | [joyminins.com](https://joyminins.com) |
+| **JoyMini** | 🟢 Live | [joyminis.com](https://joyminis.com) |
 
 ## Key Features
 
@@ -118,5 +118,5 @@ Run `make help` to see all available commands.
 
 | Environment | URL | How to Start | Auth |
 |-------------|-----|-------------|------|
-| **Production** | [https://monitor.joyminins.com](https://monitor.joyminins.com) | Deployed on VPS | `admin` / configurable via `GRAFANA_ADMIN_PASSWORD` |
+| **Production** | [https://monitor.joyminis.com](https://monitor.joyminis.com) | Deployed on VPS | `admin` / configurable via `GRAFANA_ADMIN_PASSWORD` |
 | **Test / Local** | [http://localhost:3001](http://localhost:3001) | `make up` on dev machine | `admin` / `admin` |

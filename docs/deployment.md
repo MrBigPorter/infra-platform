@@ -111,7 +111,7 @@ scp ../JoyMini_Nest_Monorepo/nginx/conf.d/50-monitor.conf \
 ```nginx
 server {
     listen 443 ssl http2;
-    server_name monitor.joyminins.com;
+    server_name monitor.joyminis.com;
 
     ssl_certificate     /etc/nginx/certs/server.crt;
     ssl_certificate_key /etc/nginx/certs/server.key;
@@ -127,7 +127,7 @@ server {
 # HTTP → HTTPS redirect
 server {
     listen 80;
-    server_name monitor.joyminins.com;
+    server_name monitor.joyminis.com;
     return 301 https://$host$request_uri;
 }
 ```
@@ -174,7 +174,7 @@ docker compose -f compose.prod.yml restart nginx
 
 # Verify the config is loaded
 docker compose -f compose.prod.yml exec nginx nginx -T | grep monitor
-# Should output: server_name monitor.joyminins.com;
+# Should output: server_name monitor.joyminis.com;
 ```
 
 ### Step 5: Configure Cloudflare DNS
@@ -195,20 +195,20 @@ docker compose -f compose.prod.yml exec nginx nginx -T | grep monitor
 
 ```bash
 # Check DNS propagation
-dig monitor.joyminins.com
+dig monitor.joyminis.com
 
 # Check HTTPS access (should return Grafana login page)
-curl -I https://monitor.joyminins.com
+curl -I https://monitor.joyminis.com
 
 # Open in browser
-open https://monitor.joyminins.com
+open https://monitor.joyminis.com
 ```
 
-**Expected result:** Grafana login page at `https://monitor.joyminins.com` with valid HTTPS certificate from Cloudflare.
+**Expected result:** Grafana login page at `https://monitor.joyminis.com` with valid HTTPS certificate from Cloudflare.
 
 ### Step 7: Initialize Grafana
 
-1. Open `https://monitor.joyminins.com`
+1. Open `https://monitor.joyminis.com`
 2. Login with default credentials: `admin` / `admin` (or your `GRAFANA_ADMIN_PASSWORD`)
 3. **Change the admin password immediately**
 4. Set `GRAFANA_ADMIN_PASSWORD` environment variable in `compose.monitoring.yml`
@@ -238,7 +238,7 @@ GRAFANA_AUTH_SECRET=your-random-64-char-hex-string
 
 - [ ] `docker compose -f compose.monitoring.yml ps` shows all 4 containers `Up`
 - [ ] `curl http://localhost:3001` returns Grafana HTML
-- [ ] `curl -I https://monitor.joyminins.com` returns `200 OK` with Grafana headers
+- [ ] `curl -I https://monitor.joyminis.com` returns `200 OK` with Grafana headers
 - [ ] Grafana Explore shows Loki data source with auto-complete
 - [ ] `{compose_project="hyperpush"}` returns logs from HyperPush containers
 - [ ] `{container="hyperpush-app"}` returns logs from the main HyperPush app

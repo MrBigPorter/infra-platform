@@ -60,7 +60,7 @@ services:
       GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-admin}
       GF_INSTALL_PLUGINS: grafana-lokiexplore-app
       GF_AUTH_ANONYMOUS_ENABLED: "false"
-      GF_SERVER_ROOT_URL: https://monitor.joyminins.com
+      GF_SERVER_ROOT_URL: https://monitor.joyminis.com
       GF_SERVER_SERVE_FROM_SUB_PATH: "true"
       # Auth Proxy — SSO via JoyMini Nginx
       GF_AUTH_PROXY_ENABLED: "true"

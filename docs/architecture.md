@@ -10,7 +10,7 @@
 graph TB
     subgraph "Layer 3: Access & Security"
         User["Engineer / Interviewer"] -->|HTTPS| CF["Cloudflare<br/>• DNS (A record)<br/>• TLS termination<br/>• DDoS protection<br/>• IP masking (orange cloud)"]
-        CF --> JoyNginx["JoyMini Nginx Container<br/>• Reverse proxy<br/>• Self-signed TLS (Cloudflare→VPS leg)<br/>• Server: monitor.joyminins.com<br/>• proxy_pass: host.docker.internal:3001"]
+        CF --> JoyNginx["JoyMini Nginx Container<br/>• Reverse proxy<br/>• Self-signed TLS (Cloudflare→VPS leg)<br/>• Server: monitor.joyminis.com<br/>• proxy_pass: host.docker.internal:3001"]
     end
 
     subgraph "Layer 2: Monitoring Stack (infra-platform)"
@@ -115,7 +115,7 @@ The monitoring stack is exposed via the existing JoyMini Nginx container (`lucky
 
 ```
 Configuration: nginx/conf.d/50-monitor.conf
-Server name:   monitor.joyminins.com
+Server name:   monitor.joyminis.com
 Upstream:      http://host.docker.internal:3001
 ```
 
@@ -124,7 +124,7 @@ Upstream:      http://host.docker.internal:3001
 ### Cloudflare
 
 ```
-Record:   A record monitor.joyminins.com → <VPS_IP>
+Record:   A record monitor.joyminis.com → <VPS_IP>
 Proxy:    🟠 Proxied (orange cloud) — hides real IP, provides TLS
 Mode:     Full — Cloudflare terminates TLS, re-encrypts to VPS
 ```
