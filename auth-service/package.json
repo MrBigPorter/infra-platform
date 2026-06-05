@@ -1,0 +1,10 @@
+{
+  "name": "grafana-auth-service",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Grafana Auth Proxy JWT token validation service",
+  "dependencies": {
+    "express": "^4.21.0",
+    "jsonwebtoken": "^9.0.2"
+  }
+}

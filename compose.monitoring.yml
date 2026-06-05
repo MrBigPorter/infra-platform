@@ -1,0 +1,103 @@
+# ==========================================
+# infra-platform — Monitoring Stack (Loki + Grafana + Promtail)
+# ==========================================
+# 使用方法:
+#   docker compose -f compose.monitoring.yml up -d
+#
+# Grafana 默认地址: http://<VPS_IP>:3001
+#   用户名: admin
+#   密码: ${GRAFANA_ADMIN_PASSWORD:-admin}
+# 首次登录后请立即修改密码！
+# ==========================================
+
+name: infra-platform
+
+services:
+  # =========================================
+  # Loki — 日志存储与索引
+  # =========================================
+  loki:
+    image: grafana/loki:latest
+    container_name: infra-loki
+    restart: unless-stopped
+    ports:
+      - "3100:3100"
+    volumes:
+      - ./loki-config.yml:/etc/loki/config.yml:ro
+      - loki-data:/loki
+    command: -config.file=/etc/loki/config.yml
+    networks:
+      - monitoring
+
+  # =========================================
+  # Promtail — 日志采集（读取 Docker 容器日志）
+  # =========================================
+  promtail:
+    image: grafana/promtail:latest
+    container_name: infra-promtail
+    restart: unless-stopped
+    volumes:
+      - ./promtail-config.yml:/etc/promtail/config.yml:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - /var/lib/docker/containers:/var/lib/docker/containers:ro
+    command: -config.file=/etc/promtail/config.yml
+    depends_on:
+      - loki
+    networks:
+      - monitoring
+
+  # =========================================
+  # Grafana — 可视化面板
+  # =========================================
+  grafana:
+    image: grafana/grafana:latest
+    container_name: infra-grafana
+    restart: unless-stopped
+    ports:
+      - "3001:3000"
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-admin}
+      GF_INSTALL_PLUGINS: grafana-lokiexplore-app
+      GF_AUTH_ANONYMOUS_ENABLED: "false"
+      GF_SERVER_ROOT_URL: https://monitor.joyminins.com
+      GF_SERVER_SERVE_FROM_SUB_PATH: "true"
+      # Auth Proxy — SSO via JoyMini Nginx
+      GF_AUTH_PROXY_ENABLED: "true"
+      GF_AUTH_PROXY_HEADER_NAME: "X-WEBAUTH-USER"
+      GF_AUTH_PROXY_HEADER_PROPERTY: "email"
+      GF_AUTH_PROXY_AUTO_SIGN_UP: "true"
+      GF_AUTH_PROXY_WHITELIST: "127.0.0.1, ::1, 172.*"
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ./grafana-provisioning:/etc/grafana/provisioning:ro
+    depends_on:
+      - loki
+    networks:
+      - monitoring
+
+  # =========================================
+  # Auth Service — Grafana SSO JWT 验证
+  # =========================================
+  auth-service:
+    image: node:20-alpine
+    container_name: infra-auth
+    restart: unless-stopped
+    working_dir: /app
+    volumes:
+      - ./auth-service:/app:ro
+    command: node server.js
+    environment:
+      GRAFANA_AUTH_SECRET: ${GRAFANA_AUTH_SECRET}
+    ports:
+      - "3004:3002"
+    networks:
+      - monitoring
+
+networks:
+  monitoring:
+    driver: bridge
+
+volumes:
+  loki-data:
+  grafana-data:

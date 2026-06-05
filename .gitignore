@@ -1,0 +1,17 @@
+# Environment (contains secrets — never commit!)
+.env
+.env.prod
+
+# Docker
+loki-data/
+grafana-data/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo

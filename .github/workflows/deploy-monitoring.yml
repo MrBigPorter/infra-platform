@@ -1,0 +1,363 @@
+# ==========================================
+# infra-platform — 🖥️ VPS Deployment (Docker Compose)
+# ==========================================
+# 参考 HyperPush deploy-vps.yml 模式:
+#   阶段 1: SSH 预检 + SCP 同步配置文件
+#   阶段 2: SSH 部署 (拉取镜像 + 启动服务 + 健康检查)
+#   阶段 3: 验证 + Telegram 通知
+# ==========================================
+#
+# 触发方式:
+#   1. 推送到 main 分支且修改了监控配置文件
+#   2. 手动: GitHub → Actions → Deploy Monitoring → Run workflow
+# ==========================================
+
+name: Deploy Monitoring
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "compose.monitoring.yml"
+      - "loki-config.yml"
+      - "promtail-config.yml"
+      - "auth-service/**"
+      - "grafana-provisioning/**"
+      - ".github/workflows/deploy-monitoring.yml"
+  workflow_dispatch:
+    inputs:
+      runner:
+        description: "🖥️ Runner"
+        type: choice
+        options: [ubuntu-latest, self-hosted]
+        default: ubuntu-latest
+
+concurrency:
+  group: deploy-monitoring
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ${{ inputs.runner || 'ubuntu-latest' }}
+    environment: production
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # ---- 预检 SSH 连通性 ----
+      - name: Validate SSH connectivity preflight
+        env:
+          SSH_HOST: ${{ secrets.SSH_HOST }}
+          SSH_PORT: ${{ secrets.SSH_PORT || '22' }}
+        run: |
+          set -euo pipefail
+          HOST="${SSH_HOST:-}"
+          PORT="${SSH_PORT:-22}"
+          if [ -z "$HOST" ]; then
+            echo "::error::SSH_HOST is empty. Set repository/environment secret SSH_HOST."
+            exit 1
+          fi
+          echo "Preflight: probing ${HOST}:${PORT}..."
+          for i in 1 2 3; do
+            if nc -zvw5 "$HOST" "$PORT"; then
+              echo " ✅ SSH reachable on attempt #$i"
+              break
+            fi
+            echo " ⚠️ Attempt #$i failed, retry in 5s..."
+            sleep 5
+          done
+
+      # ---- SSH 密钥配置 ----
+      - name: Setup SSH key & known_hosts
+        env:
+          SSH_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
+          SSH_HOST: ${{ secrets.SSH_HOST }}
+          SSH_PORT: ${{ secrets.SSH_PORT || '22' }}
+        run: |
+          set -euo pipefail
+
+          if [ -z "$SSH_KEY" ]; then
+            echo "::error::SSH_PRIVATE_KEY secret is empty or not set."
+            exit 1
+          fi
+
+          mkdir -p "$HOME/.ssh"
+          chmod 700 "$HOME/.ssh"
+          echo "$SSH_KEY" > "$HOME/.ssh/infra-deploy"
+          chmod 600 "$HOME/.ssh/infra-deploy"
+
+          # Validate key
+          if ! head -1 "$HOME/.ssh/infra-deploy" | grep -qE '^-----BEGIN (OPENSSH|RSA|EC|DSA) PRIVATE KEY-----'; then
+            echo "::warning::SSH_PRIVATE_KEY does not start with a valid private key header."
+          fi
+
+          echo "Adding $SSH_HOST:$SSH_PORT to known_hosts..."
+          ssh-keyscan -T 10 -p "$SSH_PORT" "$SSH_HOST" 2>/dev/null >> "$HOME/.ssh/known_hosts" || \
+            echo "::warning::ssh-keyscan failed"
+
+          echo "::add-mask::$SSH_KEY"
+          echo "✅ SSH key written to $HOME/.ssh/infra-deploy"
+
+      # ---- SSH 认证预检 ----
+      - name: 🔐 Verify SSH authentication
+        env:
+          SSH_HOST: ${{ secrets.SSH_HOST }}
+          SSH_USER: ${{ secrets.SSH_USERNAME }}
+          SSH_PORT: ${{ secrets.SSH_PORT || '22' }}
+        run: |
+          set -euo pipefail
+          echo "Testing SSH authentication to ${SSH_USER}@${SSH_HOST}:${SSH_PORT}..."
+
+          OUTPUT=$(ssh -o StrictHostKeyChecking=accept-new \
+            -o BatchMode=yes \
+            -o ConnectTimeout=10 \
+            -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            -i "$HOME/.ssh/infra-deploy" \
+            -p "$SSH_PORT" \
+            "${SSH_USER}@${SSH_HOST}" \
+            "echo 'SSH_AUTH_OK'" 2>&1) || {
+            EXIT_CODE=$?
+            echo "::error::SSH authentication FAILED (exit code: ${EXIT_CODE})"
+            echo "$OUTPUT"
+            exit 1
+          }
+          echo "✅ SSH authentication successful: ${OUTPUT}"
+
+      # ---- 远程目录初始化 ----
+      - name: 📁 Ensure remote target directory exists
+        env:
+          SSH_USER: ${{ secrets.SSH_USERNAME }}
+          SSH_HOST: ${{ secrets.SSH_HOST }}
+          SSH_PORT: ${{ secrets.SSH_PORT || '22' }}
+        run: |
+          set -euo pipefail
+          echo "Ensuring remote directory /opt/infra-platform exists..."
+          ssh -o StrictHostKeyChecking=accept-new \
+            -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            -i "$HOME/.ssh/infra-deploy" \
+            -p "$SSH_PORT" \
+            "${SSH_USER}@${SSH_HOST}" \
+            "set -e && \
+             mkdir -p /opt/infra-platform && \
+             echo '✅ Target directory ready:' && \
+             ls -ld /opt/infra-platform"
+          echo "✅ Remote directory verified"
+
+      # ---- SCP: 同步配置文件到 VPS ----
+      - name: 📦 Sync Config Files to VPS (SCP)
+        env:
+          SSH_USER: ${{ secrets.SSH_USERNAME }}
+          SSH_HOST: ${{ secrets.SSH_HOST }}
+          SSH_PORT: ${{ secrets.SSH_PORT || '22' }}
+        run: |
+          set -euo pipefail
+
+          echo "Creating archive of infra-platform configs..."
+          tar czf /tmp/infra-platform-deploy.tar.gz \
+            compose.monitoring.yml \
+            loki-config.yml \
+            promtail-config.yml \
+            Makefile \
+            auth-service/server.js \
+            auth-service/package.json \
+            grafana-provisioning/
+
+          echo "Archive size: $(du -h /tmp/infra-platform-deploy.tar.gz | cut -f1)"
+
+          echo "SCP archive to ${SSH_USER}@${SSH_HOST}:/tmp/..."
+          scp -o StrictHostKeyChecking=accept-new \
+            -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            -i "$HOME/.ssh/infra-deploy" \
+            -P "$SSH_PORT" \
+            -C \
+            /tmp/infra-platform-deploy.tar.gz \
+            "${SSH_USER}@${SSH_HOST}:/tmp/infra-platform-deploy.tar.gz"
+          echo "✅ Archive transferred successfully"
+
+          echo "Extracting archive on remote server..."
+          ssh -o StrictHostKeyChecking=accept-new \
+            -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            -i "$HOME/.ssh/infra-deploy" \
+            -p "$SSH_PORT" \
+            "${SSH_USER}@${SSH_HOST}" \
+            "set -e && \
+             cd /opt/infra-platform && \
+             tar xzf /tmp/infra-platform-deploy.tar.gz && \
+             rm -f /tmp/infra-platform-deploy.tar.gz && \
+             echo '--- Files deployed ---' && \
+             ls -la compose.monitoring.yml loki-config.yml promtail-config.yml Makefile && \
+             echo '✅ Files extracted successfully'"
+
+          rm -f /tmp/infra-platform-deploy.tar.gz
+          echo "✅ Local archive cleaned up"
+
+      # ---- SSH: 部署到 VPS ----
+      - name: Deploy via SSH
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USERNAME }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          port: ${{ secrets.SSH_PORT || '22' }}
+          timeout: 120s
+          command_timeout: 10m
+          script: |
+            set -e
+            cd /opt/infra-platform
+
+            retry() {
+              local max="$1" delay="$2"; shift 2
+              local n=1
+              while true; do
+                if "$@"; then return 0; fi
+                if [ "$n" -ge "$max" ]; then
+                  echo "❌ Failed after ${n} attempts: $*"; return 1
+                fi
+                echo "⚠️ attempt ${n} failed, retry in ${delay}s..."
+                n=$((n+1)); sleep "$delay"
+              done
+            }
+
+            echo "========================================"
+            echo " 1/5 — Write .env file..."
+            echo "========================================"
+            cat > .env << 'ENVEOF'
+            GRAFANA_ADMIN_PASSWORD=${{ secrets.GRAFANA_ADMIN_PASSWORD }}
+            GRAFANA_AUTH_SECRET=${{ secrets.GRAFANA_AUTH_SECRET }}
+            ENVEOF
+
+            echo "========================================"
+            echo " 2/5 — Pull latest images..."
+            echo "========================================"
+            retry 4 10 docker compose -f compose.monitoring.yml pull
+
+            echo "========================================"
+            echo " 3/5 — Stop old containers & restart..."
+            echo "========================================"
+            echo "➡️  Stopping old monitoring stack (if any)..."
+            docker compose -f compose.monitoring.yml down 2>/dev/null || true
+            echo "➡️  Starting monitoring stack..."
+            docker compose -f compose.monitoring.yml up -d
+
+            echo "========================================"
+            echo " 4/5 — Health check..."
+            echo "========================================"
+            echo "⏳ Waiting for all containers to be healthy..."
+            sleep 10
+
+            # Check all 4 containers are running
+            for container in infra-loki infra-promtail infra-grafana infra-auth; do
+              STATUS=$(docker inspect "$container" --format '{{.State.Status}}' 2>/dev/null || echo "not_found")
+              if [ "$STATUS" = "running" ]; then
+                echo " ✅ $container is running"
+              else
+                echo " ❌ $container status: $STATUS"
+              fi
+            done
+
+            echo ""
+            echo "⏳ Checking Loki readiness..."
+            for i in $(seq 1 15); do
+              if curl -sf http://localhost:3100/ready >/dev/null 2>&1; then
+                echo " ✅ Loki is ready (attempt $i)"
+                break
+              fi
+              echo " Attempt $i/15..."
+              sleep 2
+            done
+
+            echo ""
+            echo "⏳ Checking Grafana health..."
+            for i in $(seq 1 10); do
+              HEALTH=$(curl -sf http://localhost:3001/api/health 2>/dev/null || echo "")
+              if echo "$HEALTH" | grep -q '"database":"ok"'; then
+                echo " ✅ Grafana is healthy"
+                break
+              fi
+              echo " Attempt $i/10..."
+              sleep 3
+            done
+
+            echo ""
+            echo "⏳ Checking Auth Service..."
+            for i in $(seq 1 10); do
+              if curl -sf http://localhost:3004/health >/dev/null 2>&1; then
+                echo " ✅ Auth service is healthy"
+                break
+              fi
+              echo " Attempt $i/10..."
+              sleep 2
+            done
+
+            echo "========================================"
+            echo " 5/5 — Cleanup..."
+            echo "========================================"
+            docker image prune -f
+
+            echo ""
+            echo "========================================"
+            echo "✅ Monitoring stack deployment complete!"
+            echo "========================================"
+            echo ""
+            docker compose -f compose.monitoring.yml ps
+
+      # ---- 外部验证 ----
+      - name: 🔍 Verify monitoring endpoints externally
+        id: verify
+        continue-on-error: true
+        timeout-minutes: 3
+        env:
+          VPS_URL: http://${{ secrets.SSH_HOST }}
+        run: |
+          set -euo pipefail
+          echo "→ Verifying from GitHub runner (direct to VPS)..."
+          echo ""
+
+          # Loki health
+          echo "⏳ Checking Loki..."
+          for i in $(seq 1 6); do
+            RESP=$(curl -sS --max-time 10 "$VPS_URL:3100/ready" 2>&1) && {
+              echo " ✅ Loki: $RESP"
+              break
+            } || {
+              echo " Attempt $i/6..."
+              sleep 5
+            }
+          done
+
+          # Grafana health
+          echo "⏳ Checking Grafana..."
+          for i in $(seq 1 6); do
+            RESP=$(curl -sS --max-time 10 "$VPS_URL:3001/api/health" 2>&1) && {
+              echo " ✅ Grafana: $(echo "$RESP" | head -c 100)"
+              break
+            } || {
+              echo " Attempt $i/6..."
+              sleep 5
+            }
+          done
+
+          # Auth service
+          echo "⏳ Checking Auth Service..."
+          for i in $(seq 1 6); do
+            RESP=$(curl -sS --max-time 10 "$VPS_URL:3004/health" 2>&1) && {
+              echo " ✅ Auth: $(echo "$RESP" | head -c 100)"
+              break
+            } || {
+              echo " Attempt $i/6..."
+              sleep 5
+            }
+          done
+
+          echo "✅ External verification complete"
+
+      - name: ⚠️ External verification result (non-fatal)
+        if: steps.verify.outcome == 'failure'
+        run: |
+          echo "::warning::━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+          echo "::warning:: Post-deploy verification failed."
+          echo "::warning:: Try SSH and check manually:"
+          echo "::warning::   ssh ${{ secrets.SSH_USERNAME }}@${{ secrets.SSH_HOST }}"
+          echo "::warning::   docker compose -f /opt/infra-platform/compose.monitoring.yml ps"
+          echo "::warning::━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
