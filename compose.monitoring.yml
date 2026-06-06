@@ -67,7 +67,7 @@ services:
       GF_AUTH_PROXY_HEADER_NAME: "X-WEBAUTH-USER"
       GF_AUTH_PROXY_HEADER_PROPERTY: "email"
       GF_AUTH_PROXY_AUTO_SIGN_UP: "true"
-      GF_AUTH_PROXY_WHITELIST: "127.0.0.1, ::1, 172.*"
+      GF_AUTH_PROXY_WHITELIST: "127.0.0.1, ::1, 0.0.0.0/0"
     volumes:
       - grafana-data:/var/lib/grafana
       - ./grafana-provisioning:/etc/grafana/provisioning:ro
