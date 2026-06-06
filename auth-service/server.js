@@ -64,8 +64,11 @@ app.get('/auth/validate-token', (req, res) => {
   const token = req.query.token || req.headers['x-token'];
 
   if (!token) {
-    console.log('  => No token (query or header), returning 401');
-    return res.sendStatus(401);
+    // 无 token → 返回 200（不设 X-Email header）
+    // 这样 nginx 的 auth_request 返回 200，Grafana 会用 session cookie 处理
+    // 安全网：即使 nginx 的 if 检查失败，也不会阻断请求
+    console.log('  => No token (query or header), returning 200 (skip auth)');
+    return res.sendStatus(200);
   }
 
   try {
